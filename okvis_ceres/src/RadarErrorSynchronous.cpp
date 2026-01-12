@@ -89,14 +89,14 @@ bool RadarErrorSynchronous::EvaluateWithMinimalJacobians(
   okvis::kinematics::Transformation T_IR = radarParameters_.T_IR;
   Eigen::Matrix3d C_IR = T_IR.C(); // R_IR (rotation from Radar to IMU)
   Eigen::Matrix3d C_RI = C_IR.transpose(); // R_RI (rotation from IMU to Radar)
-  Eigen::Vector3d p_IR = T_IR.r(); // p_IR_I (position of radar in IMU frame)
+  Eigen::Vector3d p_IR_I = T_IR.r(); // p_IR_I (position of radar in IMU frame)
 
   // Angular velocity in IMU frame (measurement - bias)
   Eigen::Vector3d omega_S_corrected = omega_S_ - b_g; // ω_I - b_g_I
 
   // Calculate the radar error: e_R = R_RI (R_IW * v_I_W + (ω_I - b_g_I) × p_IR_I) - ṽ_r_R
   Eigen::Vector3d v_I = C_SW * v_W; // R_IW * v_I_W (velocity in IMU frame)
-  Eigen::Vector3d omega_cross_p = omega_S_corrected.cross(p_IR); // (ω_I - b_g_I) × p_IR_I
+  Eigen::Vector3d omega_cross_p = omega_S_corrected.cross(p_IR_I); // (ω_I - b_g_I) × p_IR_I
   Eigen::Vector3d v_R_expected = C_RI * (v_I + omega_cross_p); // R_RI * (R_IW * v_I_W + (ω_I - b_g) × I p_R)
   
   measurement_t error = v_R_expected - measurement_; // v_R_expected - v_R_measured
@@ -123,7 +123,7 @@ bool RadarErrorSynchronous::EvaluateWithMinimalJacobians(
         
         // Jacobian w.r.t. rotation: C_RI * crossMx(v_I)
         // The rotation affects v_I = C_SW * v_W, but not the cross product term
-        J0_minimal.topRightCorner<3,3>() = C_RI * okvis::kinematics::crossMx(v_I);
+        J0_minimal.topRightCorner<3,3>() = C_RI * C_SW * okvis::kinematics::crossMx(v_W);
 
         // pseudo inverse of the local parametrization Jacobian:
         Eigen::Matrix<double, 6, 7, Eigen::RowMajor> J0_lift;
@@ -151,7 +151,7 @@ bool RadarErrorSynchronous::EvaluateWithMinimalJacobians(
         J1_minimal.topLeftCorner<3,3>() = C_RI * C_SW;
         
         // Jacobian w.r.t. gyro bias: R_RI * crossMx(p_IR)
-        J1_minimal.block<3,3>(0,3) = C_RI * okvis::kinematics::crossMx(p_IR);
+        J1_minimal.block<3,3>(0,3) = C_RI * okvis::kinematics::crossMx(p_IR_I);
         
         // Jacobian w.r.t. accel bias: zero (not used in radar error)
 
@@ -175,11 +175,10 @@ bool RadarErrorSynchronous::EvaluateWithMinimalJacobians(
 bool RadarErrorSynchronous::VerifyJacobianNumDiff(double const* const * parameters,
                                      double** jacobian) const{
 
-
+  bool success = true;
+  const double threshold = 1e-6;
   // Only execute when Jacobians are provided
   if(jacobian != NULL){
-
-      // linearization point
 
       // T_WS
       Eigen::Map<const Eigen::Vector3d> t_WS_W(&parameters[0][0]);
@@ -196,6 +195,7 @@ bool RadarErrorSynchronous::VerifyJacobianNumDiff(double const* const * paramete
       // T_IR
       okvis::kinematics::Transformation T_IR = radarParameters_.T_IR;
       Eigen::Matrix3d C_IR = T_IR.C();
+      Eigen::Matrix3d C_RI = C_IR.transpose();
       Eigen::Vector3d p_IR_I = T_IR.r();
 
       // Angular velocity
@@ -222,8 +222,8 @@ bool RadarErrorSynchronous::VerifyJacobianNumDiff(double const* const * paramete
         Eigen::Vector3d v_I_val = C_SW_val * v_W_val;
         Eigen::Vector3d omega_S_corrected_val = omega_S_ - b_g_val;
         Eigen::Vector3d omega_cross_p_val = omega_S_corrected_val.cross(p_IR_I);
-        Eigen::Vector3d v_R_expected_val = C_IR * (v_I_val + omega_cross_p_val);
-        return squareRootInformation_ * (measurement_ - v_R_expected_val);
+        Eigen::Vector3d v_R_expected_val = C_RI * (v_I_val + omega_cross_p_val);
+        return squareRootInformation_ * (v_R_expected_val - measurement_);
       };
 
       // if jacobians for robot pose are provided
@@ -265,6 +265,19 @@ bool RadarErrorSynchronous::VerifyJacobianNumDiff(double const* const * paramete
 
           // Test if analytically and numerically computed Jacobians are close enough
           //EXPECT_TRUE((Jr - Jrn).norm() < 1e-6);
+
+          // Actual check
+          double norm_diff = (Jr - Jrn).norm();
+          if (norm_diff >= threshold) {
+            success = false;
+            std::cout << "RadarErrorSynchronous: Jacobian w.r.t. robot pose differs! Norm of difference: " << norm_diff << std::endl;
+            // Temporary debug print
+            std::cout << "--- ANALYTICAL Jr (3x7) ---\n" << Jr << std::endl;
+            std::cout << "--- NUMERICAL Jrn (3x7) ---\n" << Jrn << std::endl;
+            std::cout << "T_WS for debugging:\n" << T_WS.T() << std::endl;
+            std::cout << "v_I: " << (C_SW * v_W).transpose() << std::endl;
+            std::cout << "C_RI:\n" << C_RI << std::endl;
+          }
 
       }
 
@@ -319,8 +332,18 @@ bool RadarErrorSynchronous::VerifyJacobianNumDiff(double const* const * paramete
           // Test if analytically and numerically computed Jacobians are close enough
           //EXPECT_TRUE((Jsb - Jsbn).norm() < 1e-6);
 
+          // Actual check
+          double norm_diff = (Jsb - Jsbn).norm();
+          if (norm_diff >= threshold) {
+            success = false;
+            std::cout << "RadarErrorSynchronous: Jacobian w.r.t. SpeedAndBias differs! Norm of difference: " << norm_diff << std::endl;
+            // Check specifically for bias sign error if you suspect it:
+            // LOG(INFO) << "Analytical J_bias:\n" << Jsb.block<3,3>(0,3);
+            // LOG(INFO) << "Numerical J_bias:\n" << Jsbn.block<3,3>(0,3);
+          }
+
       }
-      return true;
+      return success;
 
   }
 
