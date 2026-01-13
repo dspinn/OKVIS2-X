@@ -37,17 +37,6 @@ Subscriber::~Subscriber()
     imgTransport_.reset();
 }
 
-Subscriber::Subscriber(std::shared_ptr<rclcpp::Node> node,
-                       okvis::ViInterface* viInterfacePtr,
-                       okvis::Publisher* publisher, 
-                       const okvis::ViParameters& parameters)
-{
-  viInterface_ = viInterfacePtr;
-  publisher_ = publisher;
-  parameters_ = parameters;
-  setNodeHandle(node);
-}
-
 Subscriber::Subscriber(std::shared_ptr<rclcpp::Node> node, 
                        okvis::ViInterface* viInterfacePtr,
                        okvis::Publisher* publisher, 
