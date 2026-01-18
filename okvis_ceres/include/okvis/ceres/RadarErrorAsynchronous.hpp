@@ -295,7 +295,7 @@ class RadarErrorAsynchronous :
                          const okvis::SpeedAndBias & speedAndBiases) const;
 
   // added convenient check
-//  virtual bool VerifyJacobianNumDiff(double const* const * parameters, double** jacobian) const;
+  virtual bool VerifyJacobianNumDiff(double const* const * parameters, double** jacobian) const;
 
   // sizes
   /// \brief Residual dimension.

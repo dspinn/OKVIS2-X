@@ -130,16 +130,14 @@ bool RadarErrorAsynchronous::EvaluateWithMinimalJacobians(double const* const * 
     std::lock_guard<std::mutex> lock(preintegrationMutex_); // this is a bit stupid, but shared read-locks only come in C++14
     const Eigen::Vector3d g_W = imuParameters_.g * Eigen::Vector3d(0, 0, 6371009).normalized();
 
+    Eigen::Vector3d b_g = speedAndBiases.segment<3>(3);
+    Eigen::Vector3d v_W_tk = speedAndBiases.head<3>();
+
     // estimate robot pose at t=r from preintegration results
     okvis::kinematics::Transformation T_WS_tr;
-    T_WS_tr.set(r_WS + speedAndBiases.head<3>()*Delta_t - 0.5*g_W*Delta_t*Delta_t
+    T_WS_tr.set(r_WS + v_W_tk*Delta_t - 0.5*g_W*Delta_t*Delta_t
                 + C_WS_tk * (acc_doubleintegral_ + dp_db_g_ * Delta_b.head<3>() - C_doubleintegral_ * Delta_b.tail<3>()),
                 T_WS_tk.q()*Delta_q_*okvis::kinematics::deltaQ(-dalpha_db_g_*Delta_b.head<3>()));
-
-
-    Eigen::Vector3d b_g = speedAndBiases.segment<3>(3);
-    Eigen::Vector3d b_a = speedAndBiases.segment<3>(6);
-    Eigen::Vector3d v_W_tk = speedAndBiases.head<3>();
 
     // Rotation from world to IMU at time tr
     Eigen::Matrix3d C_WS_tr = T_WS_tr.C();          // R_WI at time tr
@@ -534,5 +532,202 @@ int RadarErrorAsynchronous::redoPreintegration(const okvis::kinematics::Transfor
 
   return i;
 }
+
+bool RadarErrorAsynchronous::VerifyJacobianNumDiff(double const* const * parameters,
+                                     double** jacobian) const{
+
+  bool success = true;
+  const double threshold = 1e-6;
+  // Only execute when Jacobians are provided
+  if(jacobian != NULL){
+
+      // T_WS at tk
+      Eigen::Map<const Eigen::Vector3d> t_WS_W(&parameters[0][0]);
+      const Eigen::Quaterniond q_WS(parameters[0][6], parameters[0][3], parameters[0][4], parameters[0][5]);
+      okvis::kinematics::Transformation T_WS_tk(t_WS_W, q_WS);
+
+      // SpeedAndBias at tk
+      Eigen::Map<const Eigen::Matrix<double, 9, 1>> speedAndBias(parameters[1]);
+
+      // T_IR
+      okvis::kinematics::Transformation T_IR = radarParameters_.T_IR;
+      Eigen::Matrix3d C_IR = T_IR.C();
+      Eigen::Matrix3d C_RI = C_IR.transpose();
+      Eigen::Vector3d p_IR_I = T_IR.r();
+
+      // Compute square root information for unperturbed state (needed for numerical differentiation)
+      // We need to evaluate once to get the square root information
+      // TODO: Try later without this step by storing it from normal evaluation
+      double dummy_residuals[3];
+      double* dummy_jacobians[2] = {nullptr, nullptr};
+      EvaluateWithMinimalJacobians(parameters, dummy_residuals, dummy_jacobians, nullptr);
+      // Now squareRootInformation_ is set for the unperturbed state
+      Eigen::Matrix3d squareRootInformation_fixed = squareRootInformation_;
+
+      // x, dx : in minimal representation
+      double dx = 1e-7;     // Perturbation size
+      Eigen::Matrix<double, 6, 1> delta;     // Perturbation vector for robot pose
+      Eigen::Matrix<double, 9, 1> delta_sb;     // Perturbation vector for SpeedAndBias
+      // e(x+dx), e(x-dx)
+      Eigen::Matrix<double,3,1> ep; // e(x+dx)
+      Eigen::Matrix<double,3,1> em; // e(x-dx)
+
+      
+      // Helper function to compute error
+      // This propagates from tk to tr and computes radar velocity error
+      auto computeError = [&](const okvis::kinematics::Transformation& T_WS_tk_val, 
+                              const okvis::SpeedAndBias& speedAndBias_val) -> Eigen::Vector3d {
+        // Ensure preintegration is done for this state
+        // TODO: Check if always preingrating would work as well
+        {
+          std::lock_guard<std::mutex> lock(preintegrationMutex_);
+          Eigen::Matrix<double, 6, 1> Delta_b_val = speedAndBias_val.tail<6>()
+                - speedAndBiases_ref_.tail<6>();
+          redo_ = redo_ || (Delta_b_val.head<3>().norm() > 0.0003);
+          if (redoPropagationAlways || (redo_ && ((imuMeasurements_.size() < 50) )) || redoCounter_==0) {
+            redoPreintegration(T_WS_tk_val, speedAndBias_val);
+            Delta_b_val.setZero();
+            redo_ = false;
+            redoCounter_++;
+          }
+        }
+        
+        // Propagate to tr
+        const Eigen::Vector3d r_WS_tk_val = T_WS_tk_val.r();
+        const Eigen::Matrix3d C_WS_tk_val = T_WS_tk_val.C();
+        const double Delta_t = (tr_ - tk_).toSec();
+        const Eigen::Vector3d g_W = imuParameters_.g * Eigen::Vector3d(0, 0, 6371009).normalized();
+        
+        std::lock_guard<std::mutex> lock(preintegrationMutex_);
+        Eigen::Matrix<double, 6, 1> Delta_b_val = speedAndBias_val.tail<6>()
+              - speedAndBiases_ref_.tail<6>();
+
+        Eigen::Vector3d b_g_val = speedAndBias_val.segment<3>(3);
+        Eigen::Vector3d v_W_tk_val = speedAndBias_val.head<3>();
+        
+        // Propagate pose to tr3
+        okvis::kinematics::Transformation T_WS_tr;
+        T_WS_tr.set(r_WS_tk_val + v_W_tk_val*Delta_t - 0.5*g_W*Delta_t*Delta_t
+                    + C_WS_tk_val * (acc_doubleintegral_ + dp_db_g_ * Delta_b_val.head<3>() - C_doubleintegral_ * Delta_b_val.tail<3>()),
+                    T_WS_tk_val.q()*Delta_q_*okvis::kinematics::deltaQ(-dalpha_db_g_*Delta_b_val.head<3>()));
+        
+        // Velocity at tr (using full IMU preintegration)
+        Eigen::Vector3d v_W_tr = v_W_tk_val - g_W * Delta_t +
+                                 C_WS_tk_val * (acc_integral_ + dv_db_g_ * Delta_b_val.head<3>() - C_integral_ * Delta_b_val.tail<3>());
+        
+        // Compute radar velocity
+        Eigen::Matrix3d C_WS_tr = T_WS_tr.C();
+        Eigen::Matrix3d C_SW_tr = C_WS_tr.transpose();
+        Eigen::Vector3d v_I_tr = C_SW_tr * v_W_tr;
+        Eigen::Vector3d omega_S_corrected_tr_val = omega_S_tr_ - b_g_val;
+        Eigen::Vector3d omega_cross_p_tr = omega_S_corrected_tr_val.cross(p_IR_I);
+        Eigen::Vector3d v_R_expected = C_RI * (v_I_tr + omega_cross_p_tr);
+        
+        // Use the fixed square root information from unperturbed state
+        return squareRootInformation_fixed * (v_R_expected - measurement_);
+      };
+
+      // if jacobians for robot pose are provided
+      if(jacobian[0]!=NULL){
+
+          // Jacobian w.r.t robot pose
+          Eigen::Map<Eigen::Matrix<double, 3, 7, Eigen::RowMajor> > Jp(jacobian[0]);
+          Eigen::Matrix<double,3,6> Jpn_minimal;
+          Jpn_minimal.setZero();
+
+          // Numerical Jacobian w.r.t robot pose
+          for (size_t i = 0; i < 6; ++i) {
+
+            delta.setZero();
+
+            // x+dx
+            delta[i] = dx;
+            okvis::kinematics::Transformation Tp_tk = T_WS_tk;
+            Tp_tk.oplus(delta);
+            ep = computeError(Tp_tk, speedAndBias);
+
+            // x-dx
+            delta[i] = -dx;
+            okvis::kinematics::Transformation Tm_tk = T_WS_tk;
+            Tm_tk.oplus(delta);
+            em = computeError(Tm_tk, speedAndBias);
+
+            // difference quotient (e(x+dx) - e(x-dx)) / (2*dx)
+            Jpn_minimal.col(i) = (ep - em) / (2 * dx);
+          }
+
+          // liftJacobian to switch to non-minimal representation
+          Eigen::Matrix<double, 6, 7, Eigen::RowMajor> Jpn_lift;
+          PoseManifold::minusJacobian(parameters[0], Jpn_lift.data());
+
+          // hallucinate Jacobian w.r.t. state
+          Eigen::Matrix<double, 3, 7> Jpn;
+          Jpn = Jpn_minimal * Jpn_lift;
+
+          // Test if analytically and numerically computed Jacobians are close enough
+          double norm_diff = (Jp - Jpn).norm();
+          if (norm_diff >= threshold) {
+            success = false;
+            std::cout << "RadarErrorAsynchronous: Jacobian w.r.t. robot pose differs! Norm of difference: " << norm_diff << std::endl;
+            // Temporary debug print
+            std::cout << "--- ANALYTICAL Jp (3x7) ---\n" << Jp << std::endl;
+            std::cout << "--- NUMERICAL Jpn (3x7) ---\n" << Jpn << std::endl;
+            std::cout << "T_WS_tk for debugging:\n" << T_WS_tk.T() << std::endl;
+          }
+
+      }
+
+      // if jacobians for SpeedAndBias are provided
+      if(jacobian[1]!=NULL){
+
+          Eigen::Map<Eigen::Matrix<double, 3, 9, Eigen::RowMajor> > Jsb(jacobian[1]);
+          Eigen::Matrix<double,3,9> Jsbn_minimal;
+          Jsbn_minimal.setZero();
+
+          // Numerical Jacobian w.r.t SpeedAndBias
+          for (size_t i = 0; i < 9; ++i) {
+
+            delta_sb.setZero();
+
+            // x+dx
+            delta_sb[i] = dx;
+            okvis::SpeedAndBias speedAndBias_p = speedAndBias;
+            speedAndBias_p[i] += dx;
+            ep = computeError(T_WS_tk, speedAndBias_p);
+
+            // x-dx
+            delta_sb[i] = -dx;
+            okvis::SpeedAndBias speedAndBias_m = speedAndBias;
+            speedAndBias_m[i] -= dx;
+            em = computeError(T_WS_tk, speedAndBias_m);
+
+            // difference quotient (e(x+dx) - e(x-dx)) / (2*dx)
+            Jsbn_minimal.col(i) = (ep - em) / (2 * dx);
+          }
+
+          // SpeedAndBias uses Euclidean parameterization, so lift is identity
+          Eigen::Matrix<double, 3, 9> Jsbn;
+          Jsbn = Jsbn_minimal;
+
+          // Test if analytically and numerically computed Jacobians are close enough
+          double norm_diff = (Jsb - Jsbn).norm();
+          if (norm_diff >= threshold) {
+            success = false;
+            std::cout << "RadarErrorAsynchronous: Jacobian w.r.t. SpeedAndBias differs! Norm of difference: " << norm_diff << std::endl;
+            // Check specifically for bias sign error if you suspect it:
+            // LOG(INFO) << "Analytical J_bias:\n" << Jsb.block<3,3>(0,3);
+            // LOG(INFO) << "Numerical J_bias:\n" << Jsbn.block<3,3>(0,3);
+          }
+
+      }
+      return success;
+
+  }
+
+  else
+      return true;
+
+} /* verifyJacobianNumDiff */
+
 } /* namespace ceres */
 } /* namespace okvis */

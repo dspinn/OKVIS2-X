@@ -67,8 +67,8 @@ TEST(okvisTestSuite, RadarErrorRotationOnly){
     ::ceres::CostFunction* cost_function = new okvis::ceres::RadarErrorSynchronous(
         1, v_R_true, information, radarParameters, omega_S);
     problem.AddResidualBlock(cost_function, NULL,
-                             robotPoseParameterBlock.parameters(),
-                             speedAndBiasParameterBlock.parameters());
+                             robotPoseParameterBlock.parameters(),      // ← parameters[0]
+                             speedAndBiasParameterBlock.parameters());  // ← parameters[1]
 
     // Solve
     ::ceres::Solver::Options options;
