@@ -34,6 +34,7 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <geometry_msgs/msg/twist_with_covariance_stamped.hpp>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Woverloaded-virtual"
 #include <opencv2/opencv.hpp>
@@ -108,6 +109,11 @@ class Subscriber
   /// @param msg the lidar sensor ROS message
   void lidarCallback(const sensor_msgs::msg::PointCloud2& msg);
 
+  /// @brief The radar velocity callback
+  /// @param msg the radar velocity ROS message
+  /// @param radarId the radar sensor ID (0, 1, 2, etc.)
+  void radarVelocityCallback(const geometry_msgs::msg::TwistWithCovarianceStamped::SharedPtr msg, int radarId);
+
   /// @brief function that performs the synchronization of the different ir and depth images for the slam system
   void synchronizeData();
 
@@ -120,6 +126,7 @@ class Subscriber
   std::vector<image_transport::Subscriber> depthImageSubscribers_; ///< The depth image message subscriber
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr subImu_;  ///< The IMU message subscriber.
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subLiDAR_;  ///< The LiDAR message subscriber.
+  std::vector<rclcpp::Subscription<geometry_msgs::msg::TwistWithCovarianceStamped>::SharedPtr> radarSubscribers_;  ///< The Radar velocity message subscribers.
   std::mutex time_mutex_; ///< Lock when accessing time
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr gtPoses_;
