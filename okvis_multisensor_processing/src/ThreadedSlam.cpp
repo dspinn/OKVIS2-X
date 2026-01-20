@@ -405,7 +405,7 @@ bool ThreadedSlam::addGeodeticGpsMeasurement(const okvis::Time& stamp,
 // Add a radar measurement.
 bool ThreadedSlam::addRadarMeasurement(const okvis::RadarMeasurement& radarMeas)
 {
-  const int radarQueueSize = 5000;
+  const int radarQueueSize = 1000;
 
   if (blocking_)
   {
@@ -1347,6 +1347,7 @@ void ThreadedSlam::stopThreading() {
   imuMeasurementsReceived_.Shutdown();
   cameraMeasurementsReceived_.Shutdown();
   gpsMeasurementsReceived_.Shutdown();
+  radarMeasurementsReceived_.Shutdown();
   lidarMeasurementsReceived_.Shutdown();
   submapAlignmentFactorsReceived_.Shutdown();
   visualisationImages_.Shutdown();
