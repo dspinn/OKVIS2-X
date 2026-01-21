@@ -55,6 +55,68 @@ int ViSlamBackend::addGps(const GpsParameters &gpsParameters)
   return realtimeGraph_.addGps(gpsParameters);
 }
 
+int ViSlamBackend::addRadar(const RadarParameters &radarParameters)
+{
+  fullGraph_.addRadar(radarParameters);
+  return realtimeGraph_.addRadar(radarParameters);
+}
+
+bool ViSlamBackend::addRadarMeasurementsOnAllGraphs(RadarMeasurementDeque& radarMeasurementDeque, ImuMeasurementDeque& imuMeasurementDeque){
+  if(realtimeGraph_.radarParametersVec_.empty()) {
+    return false;
+  }
+
+  // Check if Radar Measurements have to be added
+  if(radarMeasurementDeque.size() > 0){
+    // Add Radar Measurements to both graphs
+    if(!isLoopClosing_ && !isLoopClosureAvailable_){ // accessible => add measurements to all graphs
+      // Add Radar Measurements to real time graph
+      realtimeGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, nullptr);
+      fullGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, nullptr);
+    }
+    else{ // not accessible => save state ids for measurements and buffer radar measurements
+      std::deque<StateId> sids;
+      realtimeGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, &sids);
+      
+      // RADAR MEASUREMENTS BUFFERING
+      // radarMeasurementDeque[i] = i-th radar measurement (oldest -> newest)
+      // sids[i] = StateId that the i-th measurement was added to (oldest -> newest)
+      const size_t numBuffered = std::min(sids.size(), radarMeasurementDeque.size());
+      for(size_t i = 0; i < numBuffered; ++i) {
+        const auto& radarMeas = radarMeasurementDeque[i];
+        // ViGraph::addRadarMeasurements keeps sids aligned with radarMeasurementDeque but may
+        // leave entries default-constructed when a measurement was skipped/failed to add.
+        if(!sids[i].isInitialised()) {
+          continue;
+        }
+
+        // Extract omega_S_tr from IMU measurements at radar timestamp
+        Eigen::Vector3d omega_S_tr = Eigen::Vector3d::Zero();
+        double min_time_diff = std::numeric_limits<double>::max();
+        for(const auto& imuMeas : imuMeasurementDeque) {
+          if(imuMeas.timeStamp <= radarMeas.timeStamp) {
+            double time_diff = std::abs((imuMeas.timeStamp - radarMeas.timeStamp).toSec());
+            if(time_diff < min_time_diff) {
+              min_time_diff = time_diff;
+              omega_S_tr = imuMeas.measurement.gyroscopes;
+            }
+          }
+        }
+
+        // Store full IMU deque - RadarErrorAsynchronous will filter internally
+        // addRadarBacklog[0] = oldest measurement
+        addRadarBacklog_.push_back(AddRadarBacklog{sids[i], radarMeas, imuMeasurementDeque, omega_S_tr});
+      }
+    }
+  }
+
+  return true;
+
+  else{
+    return false; // no measurements could have been added to the graph
+  }
+}
+
 bool ViSlamBackend::addGpsMeasurementsOnAllGraphs(GpsMeasurementDeque& inputgpsMeasurementDeque, ImuMeasurementDeque& imuMeasurementDeque){
   if(realtimeGraph_.gpsParametersVec_.empty()) {
     return false;
@@ -1731,6 +1793,17 @@ bool ViSlamBackend::synchroniseRealtimeAndFullGraph(std::vector<StateId> &update
       }
   }
   // ----- gps stuff end -----
+  
+  // ----- radar stuff begin -----
+  // Process buffered radar measurements
+  for(auto addRadarMeas : addRadarBacklog_){
+      bool stillExistsInRealtimeGraph = fullGraph_.states_.count(addRadarMeas.id) !=0;
+      if(stillExistsInRealtimeGraph) {
+          fullGraph_.addRadarMeasurement(addRadarMeas.id, addRadarMeas.radarMeasurement, addRadarMeas.imuMeasurements, addRadarMeas.omega_S_tr);
+      }
+  }
+  addRadarBacklog_.clear();
+  // ----- radar stuff end -----
 
   // ----- Submap Alignment Begin -----
   for(auto alignmentTerm : addSubmapAlignmentBacklog_){
