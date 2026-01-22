@@ -97,6 +97,21 @@ estimator_parameters:
     p_dbow: 0.35 # Match threshold for dBoW -- unfortunately this varies with setups.
     drift_percentage_heuristic: 2.5 # % allowed drift in loop closures rel. to dist. travelled.
  
+# radar parameters (supports multiple radars)
+radar_parameters:
+    - T_IR: [ 0.000000, -0.965926, -0.258819, -0.134018,
+             -1.000000, -0.000000, -0.000000, -0.003144,
+              0.000000,  0.258819, -0.965926,  0.049512,
+              0.0,       0.0,       0.0,       1.0]  # Radar 0
+    - T_IR: [ 0.547943,  0.808012,  0.216506,  0.039784,
+              0.836516, -0.529272, -0.141818, -0.097377,
+             -0.000000,  0.258819, -0.965926,  0.049512,
+              0.0,       0.0,       0.0,       1.0]  # Radar 1
+    - T_IR: [-0.836764, 0.528905,  0.141720, 0.039907,
+              0.547563, 0.808252,  0.216571, 0.104551,
+              0.000000, 0.258819, -0.965926, 0.049392,
+              0.0,      0.0,       0.0,      1.0]  # Radar 2
+
 # some options for how and what to output
 output_parameters:
     display_topview: true # Displays top view of the trajectory. Might become slow for long sequences.
