@@ -71,13 +71,22 @@ bool ViSlamBackend::addRadarMeasurementsOnAllGraphs(RadarMeasurementDeque& radar
     // Add Radar Measurements to both graphs
     if(!isLoopClosing_ && !isLoopClosureAvailable_){ // accessible => add measurements to all graphs
       // Add Radar Measurements to real time graph
-      realtimeGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, nullptr);
-      fullGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, nullptr);
+      if(!realtimeGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, nullptr)) {
+        LOG(ERROR) << "Failed to add radar measurements to realtime graph";
+        return false;  // Propagate the error
+      }
+      if(!fullGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, nullptr)) {
+        LOG(ERROR) << "Failed to add radar measurements to full graph";
+        return false;  // Propagate the error
+      }
     }
     else{ // not accessible => save state ids for measurements and buffer radar measurements
       std::deque<StateId> sids;
-      realtimeGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, &sids);
-      
+      if(!realtimeGraph_.addRadarMeasurements(radarMeasurementDeque, imuMeasurementDeque, &sids)) {
+        LOG(ERROR) << "Failed to add radar measurements to realtime graph during buffering";
+        return false;  // Propagate the error
+      }
+           
       // RADAR MEASUREMENTS BUFFERING
       // radarMeasurementDeque[i] = i-th radar measurement (oldest -> newest)
       // sids[i] = StateId that the i-th measurement was added to (oldest -> newest)
@@ -90,17 +99,37 @@ bool ViSlamBackend::addRadarMeasurementsOnAllGraphs(RadarMeasurementDeque& radar
           continue;
         }
 
-        // Extract omega_S_tr from IMU measurements at radar timestamp
-        Eigen::Vector3d omega_S_tr = Eigen::Vector3d::Zero();
-        double min_time_diff = std::numeric_limits<double>::max();
-        for(const auto& imuMeas : imuMeasurementDeque) {
-          if(imuMeas.timeStamp <= radarMeas.timeStamp) {
-            double time_diff = std::abs((imuMeas.timeStamp - radarMeas.timeStamp).toSec());
-            if(time_diff < min_time_diff) {
-              min_time_diff = time_diff;
-              omega_S_tr = imuMeas.measurement.gyroscopes;
-            }
+        // Extract omega_S_tr by interpolating between IMU measurements around radar timestamp
+        // Find the last measurement before/at tr and first measurement after tr
+        auto imuBefore = imuMeasurementDeque.end();
+        auto imuAfter = imuMeasurementDeque.end();
+        
+        for(auto it = imuMeasurementDeque.begin(); it != imuMeasurementDeque.end(); ++it){
+          if(it->timeStamp <= radarMeas.timeStamp){
+            imuBefore = it;
+          } else {
+            imuAfter = it;
+            break;
           }
+        }
+        
+        Eigen::Vector3d omega_S_tr = Eigen::Vector3d::Zero();
+        // imuBefore should always exist due to coverage check at function start
+        // just in case, check again
+        if(imuBefore == imuMeasurementDeque.end()){
+          LOG(ERROR) << "No IMU measurement before radar timestamp found when searching for omega_S_tr";
+          continue;
+        }
+        
+        if(imuAfter != imuMeasurementDeque.end()){
+          // Interpolate between the two measurements
+          double dt_total = (imuAfter->timeStamp - imuBefore->timeStamp).toSec();
+          double dt_before = (radarMeas.timeStamp - imuBefore->timeStamp).toSec();
+          double alpha = dt_before / dt_total; // interpolation factor [0, 1]
+          omega_S_tr = (1.0 - alpha) * imuBefore->measurement.gyroscopes + alpha * imuAfter->measurement.gyroscopes;
+        } else {
+          // radarTimestamp == imuMeasurementDeque.back().timeStamp (exact match at end)
+          omega_S_tr = imuBefore->measurement.gyroscopes;
         }
 
         // Store full IMU deque - RadarErrorAsynchronous will filter internally
@@ -108,10 +137,8 @@ bool ViSlamBackend::addRadarMeasurementsOnAllGraphs(RadarMeasurementDeque& radar
         addRadarBacklog_.push_back(AddRadarBacklog{sids[i], radarMeas, imuMeasurementDeque, omega_S_tr});
       }
     }
+    return true;
   }
-
-  return true;
-
   else{
     return false; // no measurements could have been added to the graph
   }

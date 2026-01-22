@@ -405,7 +405,7 @@ bool ThreadedSlam::addGeodeticGpsMeasurement(const okvis::Time& stamp,
 // Add a radar measurement.
 bool ThreadedSlam::addRadarMeasurement(const okvis::RadarMeasurement& radarMeas)
 {
-  const int radarQueueSize = 1000;
+  const int radarQueueSize = 100;
 
   if (blocking_)
   {
