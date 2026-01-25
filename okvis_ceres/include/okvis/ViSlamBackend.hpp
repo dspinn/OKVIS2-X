@@ -632,7 +632,7 @@ class ViSlamBackend //: public VioBackendInterface
   /// \param radarMeasurementDeque Queue containing a sequence of radar measurements
   /// \param imuMeasurementDeque Queue containing a sequence of IMU measurements
   /// \return True on success
-  bool addRadarMeasurementsOnAllGraphs(RadarMeasurementDeque& radarMeasurementDeque, ImuMeasurementDeque& imuMeasurementDeque);
+  bool addRadarMeasurementsOnAllGraphs(const RadarMeasurementDeque& radarMeasurementDeque, const ImuMeasurementDeque& imuMeasurementDeque);
 
   /// \brief Check for (and if needed apply) available alignments due to GPS signals
   /// \return True if alignment has been applied, false if not

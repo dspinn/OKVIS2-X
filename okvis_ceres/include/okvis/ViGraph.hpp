@@ -446,14 +446,14 @@ class ViGraph
   /// \param imuMeasurements IMU measurements covering at least time span from state timestamp to radar measurement timestamp
   /// \param omega_S_tr Angular velocity in IMU frame at radar measurement time (from IMU, not radar)
   /// \return True on success
-  bool addRadarMeasurement(StateId poseId, RadarMeasurement &radarMeas, const ImuMeasurementDeque &imuMeasurements, const Eigen::Vector3d &omega_S_tr);
+  bool addRadarMeasurement(StateId poseId, const RadarMeasurement &radarMeas, const ImuMeasurementDeque &imuMeasurements, const Eigen::Vector3d &omega_S_tr);
 
   /// \brief Add multiple radar measurements, automatically matching them to states by timestamp.
   /// \param radarMeasurementDeque Queue of radar measurements (radarMeas.timeStamp must be set for each)
   /// \param imuMeasurementDeque Queue of IMU measurements (needed to extract omega_S at radar timestamps)
   /// \param[out] sids State IDs of states that the radar measurements are assigned to (optional)
   /// \return True on success
-  bool addRadarMeasurements(RadarMeasurementDeque& radarMeasurementDeque, ImuMeasurementDeque& imuMeasurementDeque, std::deque<StateId>* sids = nullptr);
+  bool addRadarMeasurements(const RadarMeasurementDeque& radarMeasurementDeque, const ImuMeasurementDeque& imuMeasurementDeque, std::deque<StateId>* sids = nullptr);
 
   /// \brief Check which of the GPS Measurements are actually valid (consistent with the estimator based on 3-sigma bound (initialised) or a drift heuristic (re-initialising))
   /// \param inputGpsMeasurementDeque Input GPS Measurements

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OKVIS2-X - Open Keyframe-based Visual-Inertial SLAM Configurable with Dense 
  * Depth or LiDAR, and GNSS
  *
@@ -1012,7 +1012,7 @@ bool ViGraph::addGpsMeasurement(StateId poseId, GpsMeasurement &gpsMeas, const I
 
 }
 
-bool ViGraph::addRadarMeasurement(StateId poseId, RadarMeasurement &radarMeas, const ImuMeasurementDeque &imuMeasurements, const Eigen::Vector3d &omega_S_tr){
+bool ViGraph::addRadarMeasurement(StateId poseId, const RadarMeasurement &radarMeas, const ImuMeasurementDeque &imuMeasurements, const Eigen::Vector3d &omega_S_tr){
 
     OKVIS_ASSERT_TRUE(Exception, states_.count(poseId), "stateId " << poseId.value() << " not found")
     OKVIS_ASSERT_TRUE(Exception, (radarMeas.timeStamp >= states_.at(poseId).timestamp), "Radar measurement too old to add to state" )
@@ -1065,7 +1065,7 @@ bool ViGraph::addRadarMeasurement(StateId poseId, RadarMeasurement &radarMeas, c
 
 }
 
-bool ViGraph::addRadarMeasurements(RadarMeasurementDeque& radarMeasurementDeque, ImuMeasurementDeque& imuMeasurementDeque, std::deque<StateId>* sids){
+bool ViGraph::addRadarMeasurements(const RadarMeasurementDeque& radarMeasurementDeque, const ImuMeasurementDeque& imuMeasurementDeque, std::deque<StateId>* sids){
 
   if(radarMeasurementDeque.size() == 0){
     LOG(ERROR) << "No radar measurements available";
@@ -1125,6 +1125,12 @@ bool ViGraph::addRadarMeasurements(RadarMeasurementDeque& radarMeasurementDeque,
     // Check IMU coverage for state timestamp (state could be older than oldest radar measurement)
     if(!(imuMeasurementDeque.front().timeStamp <= stateTimestamp)){
       LOG(WARNING) << "IMU Measurements for adding radar error dont cover last state timestamp" << std::endl;
+      // Log timestamps for debugging IMU coverage on state
+      LOG(WARNING) << "IMU coverage check failed for state timestamp: " << stateTimestamp
+                << " next state timestamp: " << std::prev(rIterStates)->second.timestamp
+                << " (first IMU: " << imuMeasurementDeque.front().timeStamp 
+                << ", radar ts: " << radarTimestamp 
+                << ", last IMU: " << imuMeasurementDeque.back().timeStamp << ")";
       continue;
     }
     

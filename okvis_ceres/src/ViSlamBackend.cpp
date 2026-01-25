@@ -61,7 +61,7 @@ int ViSlamBackend::addRadar(const RadarParameters &radarParameters)
   return realtimeGraph_.addRadar(radarParameters);
 }
 
-bool ViSlamBackend::addRadarMeasurementsOnAllGraphs(RadarMeasurementDeque& radarMeasurementDeque, ImuMeasurementDeque& imuMeasurementDeque){
+bool ViSlamBackend::addRadarMeasurementsOnAllGraphs(const RadarMeasurementDeque& radarMeasurementDeque, const ImuMeasurementDeque& imuMeasurementDeque){
   if(realtimeGraph_.radarParametersVec_.empty()) {
     return false;
   }
