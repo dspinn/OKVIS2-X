@@ -15,9 +15,9 @@ option (BUILD_TESTS
 option (BUILD_ROS2
         "Builds ros2 wrapper" ON)
 option (HAVE_LIBREALSENSE
-        "Use realsense as part of okvis" ON)
+        "Use realsense as part of okvis" OFF)
 option (USE_NN
-        "Use keypoint classification as part of okvis, requires torch" ON)
+        "Use keypoint classification as part of okvis, requires torch" OFF)
 option (USE_GPU
         "Use keypoint classification with GPU inference, requires torch with Cuda" OFF)
 option (DO_TIMING

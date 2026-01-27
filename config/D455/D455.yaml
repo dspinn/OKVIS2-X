@@ -11,7 +11,7 @@ cameras:
         focal_length: [390.864, 391.179],
         principal_point: [327.744, 236.336],
         cam_model: pinhole,
-        camera_type: gray+depth,
+        camera_type: gray,
         mapping: true,
         mapping_rectification: false,
         slam_use: okvis} #none, okvis, okvis-depth, okvis-virtual
@@ -69,30 +69,30 @@ imu_parameters:
  
 # frontend: detection etc.
 frontend_parameters:
-    detection_threshold: 38.0 #42.0 # detection threshold. By default the uniformity radius in pixels
-    absolute_threshold: 150.0 # absolute Harris corner threshold (noise floor)
-    matching_threshold: 60.0 # BRISK descriptor matching threshold
-    octaves: 0 # number of octaves for detection. 0 means single-scale at highest resolution
-    max_num_keypoints: 700 # restrict to a maximum of this many keypoints per image (strongest ones)
-    keyframe_overlap: 0.60 # minimum field-of-view overlap
-    use_cnn: false # use the CNN (if available) to filter out dynamic content / sky
-    parallelise_detection: true # Run parallel detect & describe.
-    num_matching_threads: 4 # Parallelise matching with this number of threads.
+    detection_threshold: 25.0  # Lowered from 38.0 (more sensitive to weak features)
+    absolute_threshold: 100.0  # Lowered from 150.0 (allows weaker Harris corners)
+    matching_threshold: 45.0   # Lowered from 60.0 (more lenient matching in low light)
+    octaves: 0                 # Keep at 0 (single-scale detection)
+    max_num_keypoints: 1250    # Increased from 700 (get more features in dark scenes)
+    keyframe_overlap: 0.7      # Increased from 0.6 (more overlap for robustness)
+    use_cnn: false             # Keep same
+    parallelise_detection: true # Keep same
+    num_matching_threads: 1    # Keep same
 
 # estimator parameters
 estimator_parameters:
-    num_keyframes: 5 # number of keyframes in optimisation window
+    num_keyframes: 10 # number of keyframes in optimisation window
     num_loop_closure_frames: 3 # number of loop closure frames in optimisation window
-    num_imu_frames: 3 # number of frames linked by most recent nonlinear IMU error terms
+    num_imu_frames: 5 # number of frames linked by most recent nonlinear IMU error terms
     do_loop_closures: false # whether to do VI-SLAM or VIO
     do_final_ba: true # Whether to run a full final BA
-    enforce_realtime: false # whether to limit the time budget for optimisation
-    realtime_min_iterations: 3 # minimum number of iterations always performed
-    realtime_max_iterations: 10 # never do more than these, even if not converged
-    realtime_time_limit: 0.035 # time budget for realtime optimisation [s]
-    realtime_num_threads: 3 # number of threads for the realtime optimisation
+    enforce_realtime: true # whether to limit the time budget for optimisation
+    realtime_min_iterations: 4 # minimum number of iterations always performed
+    realtime_max_iterations: 12 # never do more than these, even if not converged
+    realtime_time_limit: 0.045 # increased from 0.035 
+    realtime_num_threads: 1 # number of threads for the realtime optimisation
     full_graph_iterations: 15 # don't do more than these for the full (background) optimisation
-    full_graph_num_threads: 3 # number of threads for the full (background) optimisation
+    full_graph_num_threads: 1 # number of threads for the full (background) optimisation
     p_dbow: 0.4 # Match threshold for dBoW -- unfortunately this varies with setups.
     drift_percentage_heuristic: 1.35 # % allowed drift in loop closures rel. to dist. travelled.
 
@@ -105,7 +105,7 @@ radar_parameters:
  
 # some options for how and what to output
 output_parameters:
-    display_topview: true # Displays top view of the trajectory. Might become slow for long sequences.
+    display_topview: false # Displays top view of the trajectory. Might become slow for long sequences.
     display_matches: true # displays debug video and matches. May be slow.
     display_overhead: false # debug overhead image. Is slow.
     enable_submapping: false # Enable volumetric submapping
