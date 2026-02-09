@@ -234,7 +234,7 @@ ViGraph::ViGraph() : globCartesianFrame_(earth_)
 {
   cauchyLossFunctionPtr_.reset(new ::ceres::CauchyLoss(1.0));
   cauchyGpsLossFunctionPtr_.reset(new ::ceres::CauchyLoss(3.0));
-  cauchyRadarLossFunctionPtr_.reset(new ::ceres::CauchyLoss(10.0));
+  cauchyRadarLossFunctionPtr_.reset(new ::ceres::CauchyLoss(3.0));
   tukeyDepthLossFunctionPtr_.reset(new ::ceres::TukeyLoss(0.1));
   tukeyLidarLossFunctionPtr_.reset(new ::ceres::TukeyLoss(2.0));
   ::ceres::Problem::Options problemOptions;
